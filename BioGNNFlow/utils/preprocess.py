@@ -86,4 +86,4 @@ def get_shape(iterable, str_check=True) -> list[int]:
     except StopIteration:
         return [0]  # return [0] if StopIteration is raised
 
-    return [len(iterable)] + get_shape(iterable[0], False)
+    return [len(iterable)] + get_shape(iterable[0], str_check=False)
