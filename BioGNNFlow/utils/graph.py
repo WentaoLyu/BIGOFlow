@@ -73,11 +73,11 @@ class GCENetwork:
         cut_off_genes: bool = True,
     ) -> None:
         _logger.start_task("cut off")
-        positive = (self.adjacency_matrix > positive_threshold).astype(int)
+        positive = (self.adjacency_matrix >= positive_threshold).astype(int)
         negative = -1 * (self.adjacency_matrix < negative_threshold).astype(int)
         self.cut_off_admatrix = positive + negative
         if cut_off_genes:
-            row_sum = _np.sum(_np.abs(self.cut_off_admatrix))
+            row_sum = _np.sum(_np.abs(self.cut_off_admatrix), axis=1)
             arg_sort = _np.argsort(row_sum)
             row_sum = row_sum[arg_sort]
             cut_index = _np.where(row_sum > 1)[0][0]
