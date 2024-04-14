@@ -28,7 +28,7 @@ def compute_markov(batch, param, method: str = "Gaussian"):
 
 def compute_distance(batch, param, alpha, K, method="Gaussian"):
     P, pi = compute_markov(batch, param, method)
-    G = torch.zeros(size=(batch.shape[0], batch.shape[0]))
+    G = 0 * P
     for k in range(K):
         G += 2 ** (-(K - k) * alpha) * torch.norm(
             P[None, :, :] - P[:, None, :], p=1, dim=2

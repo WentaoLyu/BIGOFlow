@@ -2,6 +2,8 @@ import numpy as _np
 import tasklogger as _tasklogger
 import accelerate as _accelerate
 import torch as _torch
+from torch.utils.data import DataLoader as _DataLoader
+from torch.utils.data import TensorDataset as _TensorDataset
 
 from .mtx import *
 from .modules import *
@@ -34,6 +36,11 @@ class GCENetwork:
         self.module = None
         self.accelerator = None
         self.cut_off_normalized = False
+        self.loss_fn = None
+        self.accelerator = None
+        self.dataloader = None
+        self.module = None
+        self.optimizer = None
 
     def compute_admatrix(
         self, method: str = "Pearson", noise=False, scale_factor: float = 0.01
@@ -111,17 +118,74 @@ class GCENetwork:
         if self.cut_off_normalized:
             return
         else:
-            degrees = _torch.abs(self.cut_off_admatrix).sum(dim=1)
-            self.cut_off_admatrix = self.cut_off_admatrix / _torch.sqrt(
-                degrees.unsqueeze(1) * degrees.unsqueeze(0)
+            degrees = _np.sum(_np.abs(self.cut_off_admatrix), axis=1)
+            self.cut_off_admatrix = self.cut_off_admatrix / _np.sqrt(
+                degrees[:, None] * degrees[None, :]
             )
             self.nm_cut_data = self.cut_data @ self.cut_off_admatrix
             self.cut_off_normalized = True
 
-    def get_module(self):
+    def get_module(self, target_dim=32, mid_channel=4, batch_size=64, lr=1e-3):
+        if not self.cut_off_normalized:
+            raise ValueError("Adjacency matrix not normalized!")
         self.accelerator = _accelerate.Accelerator()
+
+        in_feature = self.cut_off_admatrix.shape[0]
         self.module = GDR(
-            self.cut_off_admatrix,
-            target_dim=32,
-            mid_channel=4,
+            in_feature,
+            target_dim=target_dim,
+            mid_channel=mid_channel,
         )
+        self.loss_fn = JointLoss()
+        dataset = _TensorDataset(
+            _torch.tensor(self.nm_cut_data, dtype=_torch.float32),
+            _torch.tensor(self.cut_data, dtype=_torch.float32),
+        )
+        self.dataloader = _DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        self.optimizer = _torch.optim.AdamW(self.module.parameters(), lr=lr)
+
+        (
+            self.module,
+            self.optimizer,
+            self.dataloader,
+            self.loss_fn,
+        ) = self.accelerator.prepare(
+            self.module,
+            self.optimizer,
+            self.dataloader,
+            self.loss_fn,
+        )
+
+    def train(self, joint_coef, param, alpha, K, method="Gaussian", epochs=100):
+        self.module.train()
+        _logger.start_task("training")
+        for epoch in range(epochs):
+            batch_num = 0
+            average_recon = 0
+            average_dr = 0
+            for data in self.dataloader:
+                self.optimizer.zero_grad()
+                dr_batch, recon_batch = self.module(data[0])
+                loss, loss_recon, loss_dr = self.loss_fn(
+                    data[0],
+                    data[1],
+                    dr_batch,
+                    recon_batch,
+                    joint_coef=joint_coef,
+                    param=param,
+                    alpha=alpha,
+                    K=K,
+                    method=method,
+                )
+                self.accelerator.backward(loss)
+                self.optimizer.step()
+                average_recon = (average_recon * batch_num + loss_recon.item()) / (
+                    batch_num + 1
+                )
+                average_dr = (average_dr * batch_num + loss_dr.item()) / (batch_num + 1)
+                batch_num += 1
+            _logger.log_info(
+                f"training on epoch {epoch}\t loss_recon: {average_recon}\t loss_dr: {average_dr}"
+            )
+
+        _logger.complete_task("training")
