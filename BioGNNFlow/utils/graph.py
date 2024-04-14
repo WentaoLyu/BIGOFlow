@@ -142,7 +142,9 @@ class GCENetwork:
             _torch.tensor(self.cut_data, dtype=_torch.float32),
         )
         self.dataloader = _DataLoader(dataset, batch_size=batch_size, shuffle=True)
-        self.optimizer = _torch.optim.AdamW(self.module.parameters(), lr=lr)
+        self.optimizer = _torch.optim.Adam(
+            self.module.parameters(), lr=lr, amsgrad=True
+        )
 
         (
             self.module,
@@ -167,7 +169,7 @@ class GCENetwork:
                 self.optimizer.zero_grad()
                 dr_batch, recon_batch = self.module(data[0])
                 loss, loss_recon, loss_dr = self.loss_fn(
-                    data[0],
+                    data[1],
                     data[1],
                     dr_batch,
                     recon_batch,
@@ -187,5 +189,8 @@ class GCENetwork:
             _logger.log_info(
                 f"training on epoch {epoch}\t loss_recon: {average_recon}\t loss_dr: {average_dr}"
             )
-
+            with open("/root/Dynamics-Notebook/training_log", "a") as f:
+                f.write(
+                    f"training on epoch {epoch}\t loss_recon: {average_recon}\t loss_dr: {average_dr}\n"
+                )
         _logger.complete_task("training")

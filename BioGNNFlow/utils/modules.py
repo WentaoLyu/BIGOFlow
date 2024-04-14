@@ -19,20 +19,20 @@ class GDR(nn.Module):
         self.in_features = feature_dim
         self.dim_reduction = nn.Sequential(
             nn.Linear(self.in_features, mid_channel * target_dim),
-            nn.ReLU(),
+            nn.CELU(),
             nn.Linear(mid_channel * target_dim, target_dim),
-            nn.Tanh(),
         )
         self.recon = nn.Sequential(
             nn.Linear(target_dim, mid_channel * target_dim),
-            nn.ReLU(),
+            nn.CELU(),
             nn.Linear(mid_channel * target_dim, self.in_features),
-            nn.LeakyReLU(),
+            nn.CELU(),
+            nn.Linear(self.in_features, self.in_features),
         )
 
     def forward(self, x):
         x = self.dim_reduction(x)
-        y = self.recon(x)
+        y = nn.functional.celu(self.recon(x))
         return x, y
 
     def fn_reduction(self, x):
