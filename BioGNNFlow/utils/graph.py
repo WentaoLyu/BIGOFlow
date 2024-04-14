@@ -1,7 +1,10 @@
 import numpy as _np
 import tasklogger as _tasklogger
+import accelerate as _accelerate
+import torch as _torch
 
 from .mtx import *
+from .modules import *
 
 _logger = _tasklogger.get_tasklogger("graphlogger")
 _logger.set_level(1)
@@ -27,6 +30,10 @@ class GCENetwork:
         self.cut_off_admatrix = None
         self.cut_index = None
         self.cut_data = None
+        self.nm_cut_data = None
+        self.module = None
+        self.accelerator = None
+        self.cut_off_normalized = False
 
     def compute_admatrix(
         self, method: str = "Pearson", noise=False, scale_factor: float = 0.01
@@ -81,12 +88,40 @@ class GCENetwork:
             arg_sort = _np.argsort(row_sum)
             row_sum = row_sum[arg_sort]
             cut_index = _np.where(row_sum > 1)[0][0]
-            _logger.info(
+            _logger.log_info(
                 f"Cut off {cut_index} genes, since they have rare connection with other genes."
+            )
+            _logger.log_info(
+                f"{self.adjacency_matrix.shape[0] - cut_index} genes remains to be analyzed."
             )
             cut_index = arg_sort[cut_index:]
             self.cut_off_admatrix = self.cut_off_admatrix[_np.ix_(cut_index, cut_index)]
             self.cut_index = cut_index
             self.cut_data = _np.array(self.data)[:, cut_index]
-
+            det = _np.linalg.det(self.cut_off_admatrix)
+            if not _np.isclose(det, 0):
+                _logger.log_info(
+                    f"The cut off matrix is invertible, the determinant is {det}."
+                )
+            else:
+                _logger.log_warning("The cut off matrix is not invertible.")
         _logger.complete_task("cut off")
+
+    def normalize_cut_off(self):
+        if self.cut_off_normalized:
+            return
+        else:
+            degrees = _torch.abs(self.cut_off_admatrix).sum(dim=1)
+            self.cut_off_admatrix = self.cut_off_admatrix / _torch.sqrt(
+                degrees.unsqueeze(1) * degrees.unsqueeze(0)
+            )
+            self.nm_cut_data = self.cut_data @ self.cut_off_admatrix
+            self.cut_off_normalized = True
+
+    def get_module(self):
+        self.accelerator = _accelerate.Accelerator()
+        self.module = GDR(
+            self.cut_off_admatrix,
+            target_dim=32,
+            mid_channel=4,
+        )

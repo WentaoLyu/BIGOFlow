@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from .._math.geodesics import compute_distance
 
 __all__ = ["GDR"]
 
@@ -25,15 +26,15 @@ class GDR(nn.Module):
         self.in_features = self.adjacency_matrix.shape[0]
 
         self.dim_reduction = nn.Sequential(
-            nn.Linear(self.in_features, mid_channel),
+            nn.Linear(self.in_features, mid_channel * target_dim),
             nn.ReLU(),
-            nn.Linear(mid_channel, target_dim),
+            nn.Linear(mid_channel * target_dim, target_dim),
             nn.Tanh(),
         )
         self.recon = nn.Sequential(
-            nn.Linear(target_dim, mid_channel),
+            nn.Linear(target_dim, mid_channel * target_dim),
             nn.ReLU(),
-            nn.Linear(mid_channel, self.in_features),
+            nn.Linear(mid_channel * target_dim, self.in_features),
         )
 
     def forward(self, x):
@@ -45,4 +46,40 @@ class GDR(nn.Module):
         return self.dim_reduction(x @ self.adjacency_matrix)
 
     def fn_recon(self, x):
-        return self.recon(x) @ self.adjacency_matrix
+        return torch.nn.functional.softplus(self.recon(x) @ self.adjacency_matrix)
+
+
+class ReconLoss(nn.Module):
+    def __init__(self):
+        super(ReconLoss, self).__init__()
+
+    @staticmethod
+    def forward(batch, recon_batch):
+        diff = batch - recon_batch
+        diff = torch.norm(diff, p=2, dim=1)
+        diff = torch.mean(diff)
+        return diff
+
+
+class DimReductionLoss(nn.Module):
+    def __init__(self):
+        super(DimReductionLoss, self).__init__()
+
+    @staticmethod
+    def forward(batch, dr_batch, param, alpha, K, method):
+        dis_mat = compute_distance(batch, param, alpha, K, method)
+        dis_mat_dr = dr_batch[:, None, :] - dr_batch[None, :, :]
+        dis_mat_dr = torch.norm(dis_mat_dr, p=2, dim=2)
+        return torch.nn.functional.mse_loss(dis_mat, dis_mat_dr)
+
+
+class joint_loss(nn.Module):
+    def __init__(self):
+        super(joint_loss, self).__init__()
+
+    def forward(
+        self, batch, dr_batch, recon_batch, joint_coef, param, alpha, K, method
+    ):
+        loss_recon = ReconLoss.forward(batch, recon_batch)
+        loss_dr = DimReductionLoss.forward(batch, dr_batch, param, alpha, K, method)
+        return loss_recon + joint_coef * loss_dr
