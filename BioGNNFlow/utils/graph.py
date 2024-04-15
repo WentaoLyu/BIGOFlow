@@ -160,6 +160,8 @@ class GCENetwork:
 
     def train(self, joint_coef, param, alpha, K, method="Gaussian", epochs=100):
         self.module.train()
+        recon_ls = []
+        dr_ls = []
         _logger.start_task("training")
         for epoch in range(epochs):
             batch_num = 0
@@ -169,7 +171,7 @@ class GCENetwork:
                 self.optimizer.zero_grad()
                 dr_batch, recon_batch = self.module(data[0])
                 loss, loss_recon, loss_dr = self.loss_fn(
-                    data[1],
+                    data[0],
                     data[1],
                     dr_batch,
                     recon_batch,
@@ -186,6 +188,8 @@ class GCENetwork:
                 )
                 average_dr = (average_dr * batch_num + loss_dr.item()) / (batch_num + 1)
                 batch_num += 1
+                dr_ls.append(loss_dr.item())
+                recon_ls.append(loss_recon.item())
             _logger.log_info(
                 f"training on epoch {epoch}\t loss_recon: {average_recon}\t loss_dr: {average_dr}"
             )
@@ -194,3 +198,4 @@ class GCENetwork:
                     f"training on epoch {epoch}\t loss_recon: {average_recon}\t loss_dr: {average_dr}\n"
                 )
         _logger.complete_task("training")
+        return dr_ls, recon_ls

@@ -28,11 +28,12 @@ class GDR(nn.Module):
             nn.Linear(mid_channel * target_dim, self.in_features),
             nn.CELU(),
             nn.Linear(self.in_features, self.in_features),
+            nn.CELU(),
         )
 
     def forward(self, x):
         x = self.dim_reduction(x)
-        y = nn.functional.celu(self.recon(x))
+        y = self.recon(x)
         return x, y
 
     def fn_reduction(self, x):
