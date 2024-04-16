@@ -1,5 +1,6 @@
 import numpy as _np
 import tasklogger as _tasklogger
+
 import accelerate as _accelerate
 import torch as _torch
 from torch.utils.data import DataLoader as _DataLoader
@@ -7,6 +8,7 @@ from torch.utils.data import TensorDataset as _TensorDataset
 
 from .mtx import *
 from .modules import *
+
 
 _logger = _tasklogger.get_tasklogger("graphlogger")
 _logger.set_level(1)
@@ -67,7 +69,6 @@ class GCENetwork:
             )
         else:
             temp_data = _np.array(self.data)
-
         if method == "Pearson":
             self.adjacency_matrix = _np.corrcoef(temp_data, rowvar=False)
         elif method == "Spearman":
@@ -129,7 +130,6 @@ class GCENetwork:
         if not self.cut_off_normalized:
             raise ValueError("Adjacency matrix not normalized!")
         self.accelerator = _accelerate.Accelerator()
-
         in_feature = self.cut_off_admatrix.shape[0]
         self.module = GDR(
             in_feature,
