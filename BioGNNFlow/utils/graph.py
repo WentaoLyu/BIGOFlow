@@ -124,6 +124,7 @@ class GCENetwork:
             self.cut_off_normalized = True
 
     def get_module(self, target_dim=32, mid_channel=4, batch_size=64, lr=1e-3):
+        self.batch_size = batch_size
         if not self.cut_off_normalized:
             raise ValueError("Adjacency matrix not normalized!")
         self.accelerator = _accelerate.Accelerator()
@@ -156,6 +157,8 @@ class GCENetwork:
             self.loss_fn,
         )
 
+        self.module.edge_index = self.module.edge_index.to(self.accelerator.device)
+
     def train(self, joint_coef, param, alpha, K, method="Gaussian", epochs=100):
         self.module.train()
         recon_ls = []
@@ -166,11 +169,14 @@ class GCENetwork:
             average_recon = 0
             average_dr = 0
             for data in self.dataloader:
+                if data[0].shape[0] < self.batch_size:
+                    continue
+                temp_data = data[0]
                 self.optimizer.zero_grad()
-                dr_batch, recon_batch = self.module(data[0])
+                dr_batch, recon_batch = self.module(temp_data)
                 loss, loss_recon, loss_dr = self.loss_fn(
-                    data[0],
-                    data[0],
+                    temp_data,
+                    temp_data,
                     dr_batch,
                     recon_batch,
                     joint_coef=joint_coef,
