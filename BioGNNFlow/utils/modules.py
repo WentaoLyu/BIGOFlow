@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch_geometric.nn as pygnn
+from torch_geometric.utils import dense_to_sparse
 
 from .._math.geodesics import compute_distance
 
@@ -10,35 +11,27 @@ __all__ = ["GDR", "JointLoss"]
 class GDR(nn.Module):
     def __init__(self, in_genes, batch_size, adjacency_mat, target_dims, mid_channel):
         super().__init__()
-
-        def get_edge_index(in_matrix):
-            adj_matrix = torch.tensor(in_matrix)
-            rows, cols = torch.nonzero(adj_matrix, as_tuple=True)
-            return torch.stack([rows, cols], dim=0)
-
-        self.edge_index = get_edge_index(adjacency_mat)
-        self.conv1 = pygnn.CGConv(batch_size, mid_channel * batch_size)
-        self.conv2 = pygnn.CGConv(mid_channel * batch_size, batch_size)
+        self.edge_index, _ = dense_to_sparse(torch.tensor(adjacency_mat))
+        self.conv1 = pygnn.GCNConv(batch_size, mid_channel * batch_size)
+        self.conv2 = pygnn.GCNConv(mid_channel * batch_size, batch_size)
         self.dr = nn.Sequential(
             nn.CELU(),
-            nn.Linear(in_genes, mid_channel * target_dims),
-            nn.CELU(),
-            nn.Linear(mid_channel * target_dims, target_dims),
+            nn.Linear(in_genes, target_dims),
         )
         self.recon = nn.Sequential(
             nn.Linear(target_dims, mid_channel * target_dims),
             nn.CELU(),
             nn.Linear(mid_channel * target_dims, in_genes),
-            nn.Softplus(),
+            nn.CELU(),
         )
-        self.linear1 = nn.Linear(in_genes, in_genes)
+        self.linear1 = nn.Linear(mid_channel * batch_size, mid_channel * batch_size)
 
     def forward(self, x):
-        x = x.t()
+        x = x.transpose(-1, -2)
         x = self.conv1(x, self.edge_index)
         x = nn.functional.celu(x)
         x = self.conv2(x, self.edge_index)
-        x = x.t()
+        x = x.transpose(-1, -2)
         x = self.dr(x)
         y = self.recon(x)
         return x, y
