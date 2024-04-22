@@ -1,46 +1,47 @@
 import torch
 import torch.nn as nn
+import torch_geometric.nn as pygnn
+
 from .._math.geodesics import compute_distance
 
 __all__ = ["GDR", "JointLoss"]
 
 
 class GDR(nn.Module):
-    def __init__(self, feature_dim, target_dim, mid_channel):
-        """
-        Initialize the module
-
-        Parameters
-        ----------
-        adjacency_matrix : (Genes, Genes) array-like
-            Store the adjacency matrix of the gene co-expression network with only 0, 1 and -1.
-        """
+    def __init__(self, in_genes, batch_size, adjacency_mat, target_dims, mid_channel):
         super().__init__()
-        self.in_features = feature_dim
-        self.dim_reduction = nn.Sequential(
-            nn.Linear(self.in_features, mid_channel * target_dim),
+
+        def get_edge_index(in_matrix):
+            adj_matrix = torch.tensor(in_matrix)
+            rows, cols = torch.nonzero(adj_matrix, as_tuple=True)
+            return torch.stack([rows, cols], dim=0)
+
+        self.edge_index = get_edge_index(adjacency_mat)
+        self.conv1 = pygnn.CGConv(batch_size, mid_channel * batch_size)
+        self.conv2 = pygnn.CGConv(mid_channel * batch_size, batch_size)
+        self.dr = nn.Sequential(
             nn.CELU(),
-            nn.Linear(mid_channel * target_dim, target_dim),
+            nn.Linear(in_genes, mid_channel * target_dims),
+            nn.CELU(),
+            nn.Linear(mid_channel * target_dims, target_dims),
         )
         self.recon = nn.Sequential(
-            nn.Linear(target_dim, mid_channel * target_dim),
+            nn.Linear(target_dims, mid_channel * target_dims),
             nn.CELU(),
-            nn.Linear(mid_channel * target_dim, self.in_features),
-            nn.CELU(),
-            nn.Linear(self.in_features, self.in_features),
-            nn.CELU(),
+            nn.Linear(mid_channel * target_dims, in_genes),
+            nn.Softplus(),
         )
+        self.linear1 = nn.Linear(in_genes, in_genes)
 
     def forward(self, x):
-        x = self.dim_reduction(x)
+        x = x.t()
+        x = self.conv1(x, self.edge_index)
+        x = nn.functional.celu(x)
+        x = self.conv2(x, self.edge_index)
+        x = x.t()
+        x = self.dr(x)
         y = self.recon(x)
         return x, y
-
-    def fn_reduction(self, x):
-        return self.dim_reduction(x)
-
-    def fn_recon(self, x):
-        return self.recon(x)
 
 
 class ReconLoss(nn.Module):

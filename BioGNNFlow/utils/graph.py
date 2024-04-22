@@ -1,14 +1,12 @@
+import accelerate as _accelerate
 import numpy as _np
 import tasklogger as _tasklogger
-
-import accelerate as _accelerate
 import torch as _torch
 from torch.utils.data import DataLoader as _DataLoader
 from torch.utils.data import TensorDataset as _TensorDataset
 
-from .mtx import *
 from .modules import *
-
+from .mtx import *
 
 _logger = _tasklogger.get_tasklogger("graphlogger")
 _logger.set_level(1)
@@ -123,7 +121,6 @@ class GCENetwork:
             self.cut_off_admatrix = self.cut_off_admatrix / _np.sqrt(
                 degrees[:, None] * degrees[None, :]
             )
-            self.nm_cut_data = self.cut_data @ self.cut_off_admatrix
             self.cut_off_normalized = True
 
     def get_module(self, target_dim=32, mid_channel=4, batch_size=64, lr=1e-3):
@@ -133,12 +130,13 @@ class GCENetwork:
         in_feature = self.cut_off_admatrix.shape[0]
         self.module = GDR(
             in_feature,
-            target_dim=target_dim,
+            batch_size,
+            adjacency_mat=self.cut_off_admatrix,
+            target_dims=target_dim,
             mid_channel=mid_channel,
         )
         self.loss_fn = JointLoss()
         dataset = _TensorDataset(
-            _torch.tensor(self.nm_cut_data, dtype=_torch.float32),
             _torch.tensor(self.cut_data, dtype=_torch.float32),
         )
         self.dataloader = _DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -172,7 +170,7 @@ class GCENetwork:
                 dr_batch, recon_batch = self.module(data[0])
                 loss, loss_recon, loss_dr = self.loss_fn(
                     data[0],
-                    data[1],
+                    data[0],
                     dr_batch,
                     recon_batch,
                     joint_coef=joint_coef,
