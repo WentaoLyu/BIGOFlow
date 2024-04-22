@@ -1,7 +1,0 @@
-/.vs/
-BioGNNFlow/utils/__pycache__/preprocess.cpython-310.pyc
-BioGNNFlow/utils/__pycache__/__init__.cpython-310.pyc
-BioGNNFlow/utils/__pycache__/graph.cpython-310.pyc
-BioGNNFlow/utils/__pycache__/io.cpython-310.pyc
-.gitignore
-BioGNNFlow/__pycache__/__init__.cpython-310.pyc
